@@ -148,7 +148,7 @@ float Volume::linearInterpolate(float g0, float g1, float factor)
 // This function represents the h(x) function, which returns the weight of the cubic interpolation kernel for a given position x
 float Volume::weight(float x)
 {
-    const float a = -0.75;
+    const float a = -0.75f;
     const float x_abs = abs(x);
 
     if (x_abs < 1.0f){
@@ -164,21 +164,63 @@ float Volume::weight(float x)
 // This functions returns the results of a cubic interpolation using 4 values and a factor
 float Volume::cubicInterpolate(float g0, float g1, float g2, float g3, float factor)
 {
-    return 0.0f;
+
+    return g0 * weight(factor + 1) + g1 * weight(factor) + g2 * weight(1 - factor) + g3 * weight(2 - factor);
+        /*g1 + 
+        0.5 * factor * (g2 - g0 + 
+            factor * (2.0 * g0 - 5.0 * g1 + 4.0 * g2 - g3 + 
+                factor * (3.0 * (g1 - g2) + g3 - g0)
+            )
+        );*/
 }
 
 // ======= TODO : IMPLEMENT ========
 // This function returns the value of a bicubic interpolation
 float Volume::bicubicInterpolateXY(const glm::vec2& xyCoord, int z) const
 {
-    return 0.0f;
+    const int x = static_cast<int>(xyCoord.x);
+    const int y = static_cast<int>(xyCoord.y);
+
+    const float fac_x = xyCoord.x - float(x);
+    const float fac_y = xyCoord.y - float(y);
+
+    glm::vec4 inter_list;
+    // Loop over each of the rows
+    for (int i(0); i < 4; ++i) {
+        inter_list[i] = cubicInterpolate(
+            getVoxel(x    , y + i, z),
+            getVoxel(x + 1, y + i, z),
+            getVoxel(x + 2, y + i, z),
+            getVoxel(x + 3, y + i, z),
+            fac_x);
+        if (inter_list[i] < 0) {
+            inter_list[i] = 0;
+        }
+    }
+
+    return cubicInterpolate(inter_list[0], inter_list[1], inter_list[2], inter_list[3], fac_y);
 }
 
 // ======= TODO : IMPLEMENT ========
 // This function computes the tricubic interpolation at coord
 float Volume::getVoxelTriCubicInterpolate(const glm::vec3& coord) const
 {
-    return 0.0f;
+    if (glm::any(glm::lessThan(coord, glm::vec3(1))) || glm::any(glm::greaterThanEqual(coord, glm::vec3(m_dim - 2))))
+        // if the point is on the side, but not completely, linear interpolation is still possible, if not, then it will return 0.0f
+        return getVoxelLinearInterpolate(coord);
+
+    const int z = static_cast<int>(coord.z);
+
+    const float fac_z = coord.z - float(z);
+
+    // Do a bicubic interpolation for each 16 point square of the 64 point cube, x and y are the min min side.
+    const float p0 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z - 1);
+    const float p1 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z    );
+    const float p2 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 1);
+    const float p3 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 2);
+
+    return cubicInterpolate(p0, p1, p2, p3, fac_z);
+
 }
 
 // Load an fld volume data file
