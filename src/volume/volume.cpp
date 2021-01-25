@@ -164,14 +164,7 @@ float Volume::weight(float x)
 // This functions returns the results of a cubic interpolation using 4 values and a factor
 float Volume::cubicInterpolate(float g0, float g1, float g2, float g3, float factor)
 {
-
     return g0 * weight(factor + 1) + g1 * weight(factor) + g2 * weight(1 - factor) + g3 * weight(2 - factor);
-        /*g1 + 
-        0.5 * factor * (g2 - g0 + 
-            factor * (2.0 * g0 - 5.0 * g1 + 4.0 * g2 - g3 + 
-                factor * (3.0 * (g1 - g2) + g3 - g0)
-            )
-        );*/
 }
 
 // ======= TODO : IMPLEMENT ========
@@ -184,7 +177,7 @@ float Volume::bicubicInterpolateXY(const glm::vec2& xyCoord, int z) const
     const float fac_x = xyCoord.x - float(x);
     const float fac_y = xyCoord.y - float(y);
 
-    glm::vec4 inter_list;
+    glm::vec4 inter_list(0.0f);
     // Loop over each of the rows
     for (int i(0); i < 4; ++i) {
         inter_list[i] = cubicInterpolate(
@@ -213,13 +206,15 @@ float Volume::getVoxelTriCubicInterpolate(const glm::vec3& coord) const
 
     const float fac_z = coord.z - float(z);
 
-    // Do a bicubic interpolation for each 16 point square of the 64 point cube, x and y are the min min side.
+    // Do a bicubic interpolation for each 16 point square (4 total) of the 64 point cube, x and y are the min min side.
     const float p0 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z - 1);
     const float p1 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z    );
     const float p2 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 1);
     const float p3 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 2);
 
-    return cubicInterpolate(p0, p1, p2, p3, fac_z);
+    const float value = cubicInterpolate(p0, p1, p2, p3, fac_z);
+
+    return glm::max(value, 0.0f);
 
 }
 
