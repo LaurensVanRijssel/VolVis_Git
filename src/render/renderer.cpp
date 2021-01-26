@@ -63,7 +63,7 @@ void Renderer::render()
 {
     resetImage();
 
-    static constexpr float sampleStep = 1.0f;
+    static constexpr float sampleStep = 5.0f;
     const glm::vec3 planeNormal = -glm::normalize(m_pCamera->forward());
     const glm::vec3 volumeCenter = glm::vec3(m_pVolume->dims()) / 2.0f;
     const Bounds bounds { glm::vec3(0.0f), glm::vec3(m_pVolume->dims() - glm::ivec3(1)) };
@@ -176,7 +176,37 @@ glm::vec4 Renderer::traceRayMIP(const Ray& ray, float sampleStep) const
 glm::vec4 Renderer::traceRayISO(const Ray& ray, float sampleStep) const
 {
     static constexpr glm::vec3 isoColor { 0.8f, 0.8f, 0.2f };
-    return glm::vec4(isoColor, 1.0f);
+
+    // Incrementing samplePos directly instead of recomputing it each frame gives a measureable speed-up.
+    glm::vec3 samplePos = ray.origin + ray.tmin * ray.direction;
+    const glm::vec3 increment = sampleStep * ray.direction;
+
+    for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
+    //for (float t = ray.tmin; t <= ray.tmax; t += sampleStep) {
+        // Get the evaluated guess of t, t_eval using the bisect algorithm.
+        //float t_eval = bisectionAccuracy(ray, t -= sampleStep, t, m_config.isoValue);
+        //samplePos = ray.origin + ray.direction * t_eval;
+        const float val = m_pVolume->getVoxelInterpolate(samplePos);
+        if (val >= m_config.isoValue) {
+            // when a high enough Iso value has been found, find the right point in between
+            float t_eval = bisectionAccuracy(ray, t -= sampleStep, t, m_config.isoValue);
+            samplePos = ray.origin + ray.direction * t_eval;
+            // Check if volume shading is enabled
+            if (m_config.volumeShading) {
+                return glm::vec4(
+                    computePhongShading(
+                        isoColor,                                           // Color
+                        m_pGradientVolume->getGradientVoxel(samplePos),     // gradient
+                        //glm::normalize(m_pCamera->position() - samplePos),  // Light source
+                        glm::normalize(-ray.direction),                     // is the same as above, but quicker
+                        glm::normalize(-ray.direction)),                    // camera direction
+                    1.0f);
+            } else {
+                return glm::vec4(isoColor, 1.0f);
+            }
+        }
+    }
+    return glm::vec4(0.0f);
 }
 
 // ======= TODO: IMPLEMENT ========
@@ -185,7 +215,41 @@ glm::vec4 Renderer::traceRayISO(const Ray& ray, float sampleStep) const
 // iterations such that it does not get stuck in degerate cases.
 float Renderer::bisectionAccuracy(const Ray& ray, float t0, float t1, float isoValue) const
 {
-    return 0.0f;
+    const float tolerance = 0.01f;
+    const int max_iterations = 5; // range decreases to 3,3% of start range (t1 - t0)
+
+    glm::vec3 p1 = ray.origin + ray.direction * t1;
+    float v1 = m_pVolume->getVoxelInterpolate(p1);
+
+    // the isovalue can theoretically lay on p1 (it checks for >= then isoValue), in this case, return t1 directly
+    if (abs(isoValue - v1) < tolerance) {
+        return t1;
+    }
+
+    //glm::vec3 p0 = ray.origin + ray.direction * t0;
+    float t_mid(0.0);
+
+    for (int i(0); i < max_iterations; ++i) {
+
+        // estimate t_mid, get closer every step.
+        t_mid = (t0 + t1) / 2.0f;
+        const glm::vec3 p_mid = ray.origin + ray.direction * t_mid;
+        const float v_mid = m_pVolume->getVoxelInterpolate(p_mid);
+
+        // if v_mid is higher than isoValue, the IsoValue lays in between t0 and t_mid, otherwise in between t_mid and t1
+        if (v_mid >= isoValue) {
+            t1 = t_mid;
+        } else {
+            t0 = t_mid;
+        }
+
+        // if v_mid is very close to the isoValue, return t_mid
+        if (abs(v_mid - isoValue) < tolerance) {
+            return t_mid;
+        }
+    }
+    // if it has been tried more than the max_iter, the distance between t0 and t1 is decreased to a very small remaining distance, so it must be close enough.
+    return t_mid;
 }
 
 // ======= TODO: IMPLEMENT ========
@@ -206,7 +270,20 @@ glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
         const float intensityVal = m_pVolume->getVoxelInterpolate(samplePos);
 
         const glm::vec4 volumeValue = getTFValue(intensityVal);
-        glm::vec3 ci(volumeValue.r, volumeValue.g, volumeValue.b);
+
+        glm::vec3 ci;
+        // if volume shading is on, update the color based on the gradient.
+        if (m_config.volumeShading) {
+            ci = computePhongShading(
+                glm::vec3(volumeValue.r, volumeValue.g, volumeValue.b), // Color
+                m_pGradientVolume->getGradientVoxel(samplePos), // gradient
+                //glm::normalize(m_pCamera->position() - samplePos),  // Light source
+                glm::normalize(-ray.direction), // is the same as above, but quicker
+                glm::normalize(-ray.direction)); // camera direction
+        } else {
+            ci = glm::vec3( volumeValue.r, volumeValue.g, volumeValue.b );
+        }
+ 
         float ai = volumeValue.a;
         
         ci *= ai;
@@ -240,7 +317,30 @@ glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
 // You are free to choose any specular power that you'd like.
 glm::vec3 Renderer::computePhongShading(const glm::vec3& color, const volume::GradientVoxel& gradient, const glm::vec3& L, const glm::vec3& V)
 {
-    return glm::vec3(0.0f);
+
+    // define the constants
+    const float ka(0.1), kd(0.7), ks(0.2);
+    const int alpha(10);
+
+    // if the normal vector is clos to 0, the normal vector can be disregarded, in this case only ambient reflection is used.
+    if (gradient.magnitude < 0.001) {
+        return ka * color;
+    }
+
+    // Get the normalized normal vector (gradient) from voxel
+    const glm::vec3 N = glm::normalize(-gradient.dir);
+
+    // compute reflection ray, and determine collinearity between reflection ray and viewer ray for specular reflection
+    const glm::vec3 R = 2.0f * glm::dot(N, L) * N - L;
+    const float VR = pow(glm::dot(V, R), alpha);
+    
+    glm::vec3 Itotal = 
+        ka * color +                    // Ambient reflection
+        kd * glm::dot(L, N) * color +   // Diffuse reflection
+        ks * VR * color;                // specular reflection
+
+    //return the sum of the ambient, diffuse and specular reflection.
+    return Itotal;
 }
 
 // ======= DO NOT MODIFY THIS FUNCTION ========

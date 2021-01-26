@@ -186,8 +186,8 @@ float Volume::bicubicInterpolateXY(const glm::vec2& xyCoord, int z) const
             getVoxel(x + 2, y + i, z),
             getVoxel(x + 3, y + i, z),
             fac_x);
-        if (inter_list[i] < 0) {
-            inter_list[i] = 0;
+        if (inter_list[i] < 0.0f) {
+            inter_list[i] = 0.0f;
         }
     }
 

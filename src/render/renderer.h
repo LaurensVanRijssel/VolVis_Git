@@ -60,7 +60,7 @@ private:
 
 protected:
     const volume::Volume* m_pVolume;
-    const volume::GradientVolume* m_pGradientVolume;
+    const volume::GradientVolume* m_pGradientVolume;    
     const render::RayTraceCamera* m_pCamera;
     RenderConfig m_config;
 
