@@ -228,6 +228,22 @@ glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
 // Use the getTF2DOpacity function that you implemented to compute the opacity according to the 2D transfer function.
 glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
 {
+    glm::vec3 samplePos = ray.origin + ray.tmin * ray.direction;
+    const glm::vec3 increment = sampleStep * ray.direction;
+
+    float opValue = 0.0f;
+    for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
+
+        const float intensityVal = m_pVolume->getVoxelInterpolate(samplePos);
+        const volume::GradientVoxel& gradient = m_pGradientVolume->getGradientVoxel(samplePos);
+        const float gradientMag = gradient.magnitude;
+     
+        const float opacity = getTF2DOpacity(intensityVal, gradientMag);
+        const glm::vec4 color = m_config.TF2DColor;
+
+        opValue += 0.01f;
+
+    }
     return glm::vec4(0.0f);
 }
 
@@ -261,8 +277,10 @@ glm::vec4 Renderer::getTFValue(float val) const
 // Otherwise: return 0.0f
 //
 // The 2D transfer function settings can be accessed through m_config.TF2DIntensity and m_config.TF2DRadius.
-float Renderer::getTF2DOpacity(float intensity, float gradientMagnitude) const
+float  Renderer::getTF2DOpacity(float intensity, float gradientMagnitude) const
 {
+    float intVal = m_config.TF2DIntensity;
+    float radVal = m_config.TF2DRadius;
     return 0.0f;
 }
 
