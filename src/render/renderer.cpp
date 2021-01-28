@@ -63,7 +63,8 @@ void Renderer::render()
 {
     resetImage();
 
-    static constexpr float sampleStep = 1.0f;
+    //static constexpr float sampleStep =1.0f;
+    float sampleStep = m_config.stepSize;
     const glm::vec3 planeNormal = -glm::normalize(m_pCamera->forward());
     const glm::vec3 volumeCenter = glm::vec3(m_pVolume->dims()) / 2.0f;
     const Bounds bounds { glm::vec3(0.0f), glm::vec3(m_pVolume->dims() - glm::ivec3(1)) };
@@ -307,6 +308,8 @@ glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
 {
     glm::vec3 samplePos = ray.origin + ray.tmin * ray.direction;
     const glm::vec3 increment = sampleStep * ray.direction;
+    const glm::vec4 color = m_config.TF2DColor;
+
 
     glm::vec3 composite_color(0.0f);
     float composite_opacity = 0.0f;
@@ -324,25 +327,26 @@ glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
 
         //Get the opacity and color of this voxel
         const float opacity = getTF2DOpacity(intensityVal, gradientMag);
-        const glm::vec4 color = m_config.TF2DColor;
 
-        glm::vec3 ci;
-        if (m_config.volumeShading) {
-            ci = computePhongShading(
-                glm::vec3(color.r, color.g, color.b), // Color
-                gradient, // gradient
-                //glm::normalize(m_pCamera->position() - samplePos),  // Light source
-                glm::normalize(-ray.direction), // is the same as above, but quicker
-                glm::normalize(-ray.direction)); // camera direction
-        } else {
-            ci = glm::vec3(color.r, color.g, color.b);
+        if (opacity != 0.0f) {
+            glm::vec3 ci;
+            if (m_config.volumeShading) {
+                ci = computePhongShading(
+                    glm::vec3(color.r, color.g, color.b), // Color
+                    gradient, // gradient
+                    //glm::normalize(m_pCamera->position() - samplePos),  // Light source
+                    glm::normalize(-ray.direction), // is the same as above, but quicker
+                    glm::normalize(-ray.direction)); // camera direction
+            } else {
+                ci = glm::vec3(color.r, color.g, color.b);
+            }
+
+            ci = ci * opacity;
+
+            //Composite the color value and opacity of previous voxels with this voxel
+            composite_color = composite_color + (1 - opacity) * ci;
+            composite_opacity = composite_opacity + (1 - composite_opacity) * opacity;
         }
-
-        ci = ci * opacity;
-
-        //Composite the color value and opacity of previous voxels with this voxel
-        composite_color = composite_color + (1 - opacity) * ci;
-        composite_opacity = composite_opacity + (1 - composite_opacity) * opacity;
 
     }
     //const glm::vec4 color = m_config.TF2DColor;
@@ -413,21 +417,27 @@ glm::vec4 Renderer::getTFValue(float val) const
 // The 2D transfer function settings can be accessed through m_config.TF2DIntensity and m_config.TF2DRadius.
 float  Renderer::getTF2DOpacity(float intensity, float gradientMagnitude) const
 {
-    float intVal = m_config.TF2DIntensity;
-    float radVal = m_config.TF2DRadius;
+    //If the intensity is clearly outside the 2D TF then just return imidiatly
+    if (intensity < (m_config.TF2DIntensity - m_config.TF2DRadius)) {
+        return 0.0f;
+    }
+    if (intensity > (m_config.TF2DIntensity + m_config.TF2DRadius)) {
+        return 0.0f;
+    }
 
     //Point 1 = (m_config.TF2DIntensity, 0)
     //Point 2 = (m_config.TF2DIntensity - m_config.TF2DRadius, 1)
     //Point 3 = (m_config.TF2DIntensity + m_config.TF2DRadius, 1)
 
+    //Define the point that is defined on the 2D TF by this voxel.
     glm::vec2 target_point(intensity, gradientMagnitude);
 
-    //m_pGradientVolume->maxMagnitude()
-
+    //Define the 3 points of the triangle that define the 2D TF.
     glm::vec2 p1(m_config.TF2DIntensity, 0.0f);
     glm::vec2 p2(m_config.TF2DIntensity - m_config.TF2DRadius, m_pGradientVolume->maxMagnitude());
     glm::vec2 p3(m_config.TF2DIntensity + m_config.TF2DRadius, m_pGradientVolume->maxMagnitude());
 
+    //Define the matrix's that are created by the different points
     glm::mat2x2 mt2(target_point, p2);
     glm::mat2x2 mt3(target_point, p3);
 
@@ -442,6 +452,12 @@ float  Renderer::getTF2DOpacity(float intensity, float gradientMagnitude) const
     const float d13 = glm::determinant(m13);
     const float d23 = glm::determinant(m23);
 
+
+    //To determine if the point lies inside the triangle we check if the convex hull contains 3 or 4 points.
+    //If the convex hull contains 4 points the point lies outside the triangle.
+    //If the convex hull contains 3 points the point lies inside the triangle.
+    //Here is a definition of how this works:
+    //https://mathworld.wolfram.com/TriangleInterior.html
     const float a = ((dt3 - d13) / d23);
     const float b = -1 * ((dt2 - d12) / d23);
 
