@@ -75,7 +75,7 @@ void Renderer::render()
 #define PARALLELISM 1
 #else
     // Disable multithreading in debug mode.
-#define PARALLELISM 1
+#define PARALLELISM 0
 #endif
 
 #if PARALLELISM == 0
@@ -265,7 +265,6 @@ glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
     for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
 
         const float intensityVal = m_pVolume->getVoxelInterpolate(samplePos);
-
         const glm::vec4 volumeValue = getTFValue(intensityVal);
 
         glm::vec3 ci;
@@ -304,10 +303,8 @@ glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
     glm::vec3 samplePos = ray.origin + ray.tmin * ray.direction;
     const glm::vec3 increment = sampleStep * ray.direction;
 
-
     glm::vec3 composite_color(0.0f);
     float composite_opacity = 0.0f;
-    float max_gradient = 0.0f;
     for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
 
         //Determine the intensity and gradient of this voxel
@@ -315,16 +312,17 @@ glm::vec4 Renderer::traceRayTF2D(const Ray& ray, float sampleStep) const
         const volume::GradientVoxel& gradient = m_pGradientVolume->getGradientVoxel(samplePos);
         const float gradientMag = gradient.magnitude;
 
-        if (gradientMag > max_gradient) {
-            max_gradient = gradientMag;
-        }
-
-        //Get the opacity and color of this voxel
+        //Determine what transfer function this voxel belongs to.
         const int tfNum = determine2DTF(intensityVal, gradientMag);
+        //If it belongs to a transfer funtion, determine the color and opacity.
+        //Otherwise we can just go to the next voxel on this ray.
         if (tfNum >= 0) {
+
+            //Get the opacity and color of this voxel
             const float opacity = getTF2DOpacity(intensityVal, gradientMag, tfNum);
             const glm::vec4 color = m_config.TFunctions2D->at(tfNum).color;
 
+            //If the opacity of this voxel is 0, just go to the next voxel in along this ray.
             if (opacity != 0.0f) {
                 glm::vec3 ci;
                 if (m_config.volumeShading) {
@@ -404,6 +402,10 @@ glm::vec4 Renderer::getTFValue(float val) const
     return m_config.tfColorMap[i];
 }
 
+// ======= SELF ADDED =============
+//Determine which 2D transfer functions that the point defined by the intensity and gradientMagnitude lies in.
+//Return the index of that transfer function
+//If it does not lie in any transfer function, return -1
 int Renderer::determine2DTF(float intensity, float gradientMagnitude) const
 {
     glm::vec2 target_point(intensity, gradientMagnitude);
@@ -411,16 +413,13 @@ int Renderer::determine2DTF(float intensity, float gradientMagnitude) const
     for (int i = 0; i < m_config.TFunctions2D->size(); ++i) {
         TFunction tf = m_config.TFunctions2D->at(i);
 
+        //If this point clearly does not lie inside the transfer function, skip this transfer function.
         if (intensity < (tf.t_intensity - tf.t_radius)) {
             continue;
         }
         if (intensity > (tf.t_intensity + tf.t_radius)) {
             continue;
         }
-
-        /*glm::vec2 p1(tf.intensities[0], tf.gradMag[0] * m_pGradientVolume->maxMagnitude());
-        glm::vec2 p2(tf.intensities[1], tf.gradMag[1] * m_pGradientVolume->maxMagnitude());
-        glm::vec2 p3(tf.intensities[2], tf.gradMag[2] * m_pGradientVolume->maxMagnitude());*/
 
         glm::vec2 p1(tf.t_intensity, tf.t_minGradient * m_pGradientVolume->maxMagnitude());
         glm::vec2 p2(tf.t_intensity - tf.t_radius, tf.t_maxGradient * m_pGradientVolume->maxMagnitude());
@@ -467,7 +466,6 @@ int Renderer::determine2DTF(float intensity, float gradientMagnitude) const
 // The 2D transfer function settings can be accessed through m_config.TF2DIntensity and m_config.TF2DRadius.
 float  Renderer::getTF2DOpacity(float intensity, float gradientMagnitude, int tfNum) const
 {
-    glm::vec2 target_point(intensity, gradientMagnitude);
     TFunction tf = m_config.TFunctions2D->at(tfNum);
 
     float intDifferance = abs(tf.t_intensity - intensity);
@@ -476,63 +474,6 @@ float  Renderer::getTF2DOpacity(float intensity, float gradientMagnitude, int tf
     float intValue = 1 - normalizedDifferance;
 
     return intValue;
-    
-    //If the intensity is clearly outside the 2D TF then just return imidiatly
-    /*if (intensity < (m_config.TF2DIntensity - m_config.TF2DRadius)) {
-        return 0.0f;
-    }
-    if (intensity > (m_config.TF2DIntensity + m_config.TF2DRadius)) {
-        return 0.0f;
-    }*/
-
-    //Point 1 = (m_config.TF2DIntensity, 0)
-    //Point 2 = (m_config.TF2DIntensity - m_config.TF2DRadius, 1)
-    //Point 3 = (m_config.TF2DIntensity + m_config.TF2DRadius, 1)
-
-    //Define the point that is defined on the 2D TF by this voxel.
-    /*glm::vec2 target_point(intensity, gradientMagnitude);
-
-    //Define the 3 points of the triangle that define the 2D TF.
-    glm::vec2 p1(m_config.TF2DIntensity, 0.0f);
-    glm::vec2 p2(m_config.TF2DIntensity - m_config.TF2DRadius, m_pGradientVolume->maxMagnitude());
-    glm::vec2 p3(m_config.TF2DIntensity + m_config.TF2DRadius, m_pGradientVolume->maxMagnitude());
-
-    //Define the matrix's that are created by the different points
-    glm::mat2x2 mt2(target_point, p2);
-    glm::mat2x2 mt3(target_point, p3);
-
-    glm::mat2x2 m12(p1, p2);
-    glm::mat2x2 m13(p1, p3);
-    glm::mat2x2 m23(p2, p3);
-
-    const float dt2 = glm::determinant(mt2);
-    const float dt3 = glm::determinant(mt3);
-
-    const float d12 = glm::determinant(m12);
-    const float d13 = glm::determinant(m13);
-    const float d23 = glm::determinant(m23);
-
-
-    //To determine if the point lies inside the triangle we check if the convex hull contains 3 or 4 points.
-    //If the convex hull contains 4 points the point lies outside the triangle.
-    //If the convex hull contains 3 points the point lies inside the triangle.
-    //Here is a definition of how this works:
-    //https://mathworld.wolfram.com/TriangleInterior.html
-    const float a = ((dt3 - d13) / d23);
-    const float b = -1 * ((dt2 - d12) / d23);
-
-    if ((a > 0) && (b > 0)) {
-        if ((a + b) > 0) {
-
-            float intDifferance = abs(m_config.TF2DIntensity - intensity);
-            float normalizedDifferance = intDifferance / m_config.TF2DRadius;
-
-            float intValue = 1 - normalizedDifferance;
-
-            return intValue;
-        }
-    }*/
-    //return 0.0f;
 }
 
 // This function computes if a ray intersects with the axis-aligned bounding box around the volume.

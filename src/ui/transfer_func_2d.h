@@ -8,10 +8,10 @@
 
 namespace ui {
 
+//Define a structure for the transfer function
+//This allows for multiple transfer functions to be defined.
+//This struct is the exact same as the one defined in render_config.h to allow them to share data easily.
 struct TFunction {
-    //std::array<float, 3> intensities {0.0f, 0.0f, 0.0f};
-    //std::array<float, 3> gradMag { 0.0f, 0.0f, 0.0f };
-
     float t_intensity;
     float t_radius;
     float t_minGradient, t_maxGradient;
