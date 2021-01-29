@@ -63,7 +63,7 @@ void Renderer::render()
 {
     resetImage();
 
-    static constexpr float sampleStep = 5.0f;
+    static constexpr float sampleStep = 1.0f;
     const glm::vec3 planeNormal = -glm::normalize(m_pCamera->forward());
     const glm::vec3 volumeCenter = glm::vec3(m_pVolume->dims()) / 2.0f;
     const Bounds bounds { glm::vec3(0.0f), glm::vec3(m_pVolume->dims() - glm::ivec3(1)) };
@@ -171,7 +171,7 @@ glm::vec4 Renderer::traceRayMIP(const Ray& ray, float sampleStep) const
 // This function should find the position where the ray intersects with the volume's isosurface.
 // If volume shading is DISABLED then simply return the isoColor.
 // If volume shading is ENABLED then return the phong-shaded color at that location using the local gradient (from m_pGradientVolume).
-//   Use the camera position (m_pCamera->position()) as the light position.
+// Use the camera position (m_pCamera->position()) as the light position.
 // Use the bisectionAccuracy function (to be implemented) to get a more precise isosurface location between two steps.
 glm::vec4 Renderer::traceRayISO(const Ray& ray, float sampleStep) const
 {
@@ -182,30 +182,28 @@ glm::vec4 Renderer::traceRayISO(const Ray& ray, float sampleStep) const
     const glm::vec3 increment = sampleStep * ray.direction;
 
     for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
-    //for (float t = ray.tmin; t <= ray.tmax; t += sampleStep) {
-        // Get the evaluated guess of t, t_eval using the bisect algorithm.
-        //float t_eval = bisectionAccuracy(ray, t -= sampleStep, t, m_config.isoValue);
-        //samplePos = ray.origin + ray.direction * t_eval;
+
         const float val = m_pVolume->getVoxelInterpolate(samplePos);
+
         if (val >= m_config.isoValue) {
             // when a high enough Iso value has been found, find the right point in between
             float t_eval = bisectionAccuracy(ray, t -= sampleStep, t, m_config.isoValue);
             samplePos = ray.origin + ray.direction * t_eval;
-            // Check if volume shading is enabled
+            // Check if volume shading is enabled, if so compute the reflection color, otherwise, return the isocolor
             if (m_config.volumeShading) {
                 return glm::vec4(
                     computePhongShading(
                         isoColor,                                           // Color
                         m_pGradientVolume->getGradientVoxel(samplePos),     // gradient
-                        //glm::normalize(m_pCamera->position() - samplePos),  // Light source
-                        glm::normalize(-ray.direction),                     // is the same as above, but quicker
-                        glm::normalize(-ray.direction)),                    // camera direction
+                        -ray.direction,                                     // light source direction (same as camera)
+                        -ray.direction),                                    // camera direction
                     1.0f);
             } else {
                 return glm::vec4(isoColor, 1.0f);
             }
         }
     }
+    // If no value was above the threshold, return transparent black.
     return glm::vec4(0.0f);
 }
 
@@ -216,30 +214,29 @@ glm::vec4 Renderer::traceRayISO(const Ray& ray, float sampleStep) const
 float Renderer::bisectionAccuracy(const Ray& ray, float t0, float t1, float isoValue) const
 {
     const float tolerance = 0.01f;
-    const int max_iterations = 5; // range decreases to 3,3% of start range (t1 - t0)
+    const int max_iterations = 5; // range decreases to 3,1% of start range (t1 - t0)
 
-    glm::vec3 p1 = ray.origin + ray.direction * t1;
-    float v1 = m_pVolume->getVoxelInterpolate(p1);
-
-    // the isovalue can theoretically lay on p1 (it checks for >= then isoValue), in this case, return t1 directly
-    if (abs(isoValue - v1) < tolerance) {
-        return t1;
-    }
-
-    //glm::vec3 p0 = ray.origin + ray.direction * t0;
     float t_mid(0.0);
 
     for (int i(0); i < max_iterations; ++i) {
 
         // estimate t_mid, get closer every step.
         t_mid = (t0 + t1) / 2.0f;
+        float t_diff = t_mid - t0;
         const glm::vec3 p_mid = ray.origin + ray.direction * t_mid;
         const float v_mid = m_pVolume->getVoxelInterpolate(p_mid);
 
         // if v_mid is higher than isoValue, the IsoValue lays in between t0 and t_mid, otherwise in between t_mid and t1
+        // If the step size is below 1, there are only 2 voxels, in this case, return the right one.
         if (v_mid >= isoValue) {
+            if (t_diff < 1.0f) {
+                return t_mid;
+            }
             t1 = t_mid;
         } else {
+            if (t_diff < 1.0f) {
+                return t1;
+            }
             t0 = t_mid;
         }
 
@@ -248,7 +245,7 @@ float Renderer::bisectionAccuracy(const Ray& ray, float t0, float t1, float isoV
             return t_mid;
         }
     }
-    // if it has been tried more than the max_iter, the distance between t0 and t1 is decreased to a very small remaining distance, so it must be close enough.
+    // if it has been tried more than the max_iter, return t_mid, is will be close to the actual value.
     return t_mid;
 }
 
@@ -257,14 +254,13 @@ float Renderer::bisectionAccuracy(const Ray& ray, float t0, float t1, float isoV
 // Use getTFValue to compute the color for a given volume value according to the 1D transfer function.
 glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
 {
-    //std::cout << "In Trace Ray Composite" << std::endl;
-
     glm::vec3 samplePos = ray.origin + ray.tmin * ray.direction;
     const glm::vec3 increment = sampleStep * ray.direction;
 
     glm::vec3 ct(0.0f);
     float at = 0.0f;
 
+    // for each step, interpolate the intensity and compute the color and opacity accordingly.
     for (float t = ray.tmin; t <= ray.tmax; t += sampleStep, samplePos += increment) {
 
         const float intensityVal = m_pVolume->getVoxelInterpolate(samplePos);
@@ -276,10 +272,9 @@ glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
         if (m_config.volumeShading) {
             ci = computePhongShading(
                 glm::vec3(volumeValue.r, volumeValue.g, volumeValue.b), // Color
-                m_pGradientVolume->getGradientVoxel(samplePos), // gradient
-                //glm::normalize(m_pCamera->position() - samplePos),  // Light source
-                glm::normalize(-ray.direction), // is the same as above, but quicker
-                glm::normalize(-ray.direction)); // camera direction
+                m_pGradientVolume->getGradientVoxel(samplePos),         // gradient
+                -ray.direction,                                         // Light source is at the camera position.
+                -ray.direction);                                        // camera direction
         } else {
             ci = glm::vec3( volumeValue.r, volumeValue.g, volumeValue.b );
         }
@@ -291,13 +286,13 @@ glm::vec4 Renderer::traceRayComposite(const Ray& ray, float sampleStep) const
         ct += (1 - at) * ci;
         at = at + (1 - at) * ai;
 
+        // if the total opacity is close to 1, the remaining voxel do not matter.
         if (at >= 0.99f) {
             break;
         }
     }
-    glm::vec4 retValue(ct, at);
 
-    return retValue;
+    return glm::vec4(ct, at);
 }
 
 // ======= TODO: IMPLEMENT ========
@@ -319,16 +314,16 @@ glm::vec3 Renderer::computePhongShading(const glm::vec3& color, const volume::Gr
 {
 
     // define the constants
-    const float ka(0.1), kd(0.7), ks(0.2);
+    const float ka(0.1f), kd(0.7f), ks(0.2f);
     const int alpha(10);
 
     // if the normal vector is clos to 0, the normal vector can be disregarded, in this case only ambient reflection is used.
     if (gradient.magnitude < 0.001) {
         return ka * color;
     }
-
+    const glm::vec3 N = glm::dot(gradient.dir, L) < 0 ? glm::normalize(-gradient.dir) : glm::normalize(gradient.dir);
     // Get the normalized normal vector (gradient) from voxel
-    const glm::vec3 N = glm::normalize(-gradient.dir);
+    //const glm::vec3 N = glm::normalize(gradient.dir);
 
     // compute reflection ray, and determine collinearity between reflection ray and viewer ray for specular reflection
     const glm::vec3 R = 2.0f * glm::dot(N, L) * N - L;
