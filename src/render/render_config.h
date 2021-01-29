@@ -18,6 +18,8 @@ struct RenderConfig {
     RenderMode renderMode { RenderMode::RenderSlicer };
     glm::ivec2 renderResolution;
 
+    float stepSize = 1.0f;
+
     bool volumeShading { false };
     float isoValue { 95.0f };
 

@@ -154,6 +154,11 @@ void Menu::showRayCastTab(std::chrono::duration<double> renderTime)
         ImGui::RadioButton("Linear", pInterpolationModeInt, int(volume::InterpolationMode::Linear));
         ImGui::RadioButton("TriCubic", pInterpolationModeInt, int(volume::InterpolationMode::Cubic));
 
+        ImGui::NewLine();
+
+        ImGui::Text("Step Size:");
+        ImGui::DragFloat("", &m_renderConfig.stepSize, 0.1f, 1.0f, 100.0f);
+
         ImGui::EndTabItem();
     }
 }

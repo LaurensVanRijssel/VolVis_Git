@@ -126,7 +126,7 @@ float Volume::getVoxelLinearInterpolate(const glm::vec3& coord) const
     const float fac_x = coord.x - float(x);
     const float fac_y = coord.y - float(y);
     const float fac_z = coord.z - float(z);
-
+     
     const float t0 = linearInterpolate(getVoxel(x, y, z), getVoxel(x + 1, y, z), fac_x);
     const float t1 = linearInterpolate(getVoxel(x, y + 1, z), getVoxel(x + 1, y + 1, z), fac_x);
     const float t2 = linearInterpolate(getVoxel(x, y, z + 1), getVoxel(x + 1, y, z + 1), fac_x);
