@@ -164,7 +164,12 @@ float Volume::weight(float x)
 // This functions returns the results of a cubic interpolation using 4 values and a factor
 float Volume::cubicInterpolate(float g0, float g1, float g2, float g3, float factor)
 {
-    return g0 * weight(factor + 1) + g1 * weight(factor) + g2 * weight(1 - factor) + g3 * weight(2 - factor);
+    // Sum up each intensity times the computed weight based on the distance.
+    return 
+        g0 * weight(factor + 1) + 
+        g1 * weight(factor) + 
+        g2 * weight(1 - factor) + 
+        g3 * weight(2 - factor);
 }
 
 // ======= TODO : IMPLEMENT ========
@@ -178,7 +183,7 @@ float Volume::bicubicInterpolateXY(const glm::vec2& xyCoord, int z) const
     const float fac_y = xyCoord.y - float(y);
 
     glm::vec4 inter_list(0.0f);
-    // Loop over each of the rows
+    // Loop over each of the rows, storing a list of the interpolated voxel intensities.
     for (int i(0); i < 4; ++i) {
         inter_list[i] = cubicInterpolate(
             getVoxel(x    , y + i, z),
@@ -186,11 +191,12 @@ float Volume::bicubicInterpolateXY(const glm::vec2& xyCoord, int z) const
             getVoxel(x + 2, y + i, z),
             getVoxel(x + 3, y + i, z),
             fac_x);
+        // If the interpolated value is below 0 (it can go beyond the limits of the intensities) set it to 0.
         if (inter_list[i] < 0.0f) {
             inter_list[i] = 0.0f;
         }
     }
-
+    // Return the interpolated value of the intensities foudn along the x axis.
     return cubicInterpolate(inter_list[0], inter_list[1], inter_list[2], inter_list[3], fac_y);
 }
 
@@ -206,14 +212,19 @@ float Volume::getVoxelTriCubicInterpolate(const glm::vec3& coord) const
 
     const float fac_z = coord.z - float(z);
 
-    // Do a bicubic interpolation for each 16 point square (4 total) of the 64 point cube, x and y are the min min side.
-    const float p0 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z - 1);
-    const float p1 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z    );
-    const float p2 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 1);
-    const float p3 = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + 2);
+    glm::vec4 inter_list(0.0f);
+    // Loop over each of the rows, storing a list of the interpolated voxel intensities.
+    for (int i(0); i < 4; ++i) {
+        inter_list[i] = bicubicInterpolateXY(glm::vec2(coord.x - 1.0, coord.y - 1.0), z + i - 1);
+        // If the interpolated value is below 0 (it can go beyond the limits of the intensities) set it to 0.
+        if (inter_list[i] < 0.0f) {
+            inter_list[i] = 0.0f;
+        }
+    }
 
-    const float value = cubicInterpolate(p0, p1, p2, p3, fac_z);
+    const float value = cubicInterpolate(inter_list[0], inter_list[1], inter_list[2], inter_list[3], fac_z);
 
+    // if the value is negative, return 0.0
     return glm::max(value, 0.0f);
 
 }
