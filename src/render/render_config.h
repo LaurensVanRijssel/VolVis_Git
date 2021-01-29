@@ -3,6 +3,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <cstring> // memcmp  // macOS change TH
+#include <vector>
 
 namespace render {
 
@@ -12,6 +13,17 @@ enum class RenderMode {
     RenderIso,
     RenderComposite,
     RenderTF2D
+};
+
+struct TFunction {
+    //std::array<float, 3> intensities { 0.0f, 0.0f, 0.0f };
+    //std::array<float, 3> gradMag { 0.0f, 0.0f, 0.0f };
+
+    float t_intensity;
+    float t_radius;
+    float t_minGradient, t_maxGradient;
+
+    glm::vec4 color;
 };
 
 struct RenderConfig {
@@ -34,6 +46,8 @@ struct RenderConfig {
     float TF2DIntensity;
     float TF2DRadius;
     glm::vec4 TF2DColor;
+
+    std::vector<TFunction>* TFunctions2D = new std::vector<TFunction>();
 };
 
 // NOTE(Mathijs): should be replaced by C++20 three-way operator (aka spaceship operator) if we require C++ 20 support from Linux users (GCC10 / Clang10).

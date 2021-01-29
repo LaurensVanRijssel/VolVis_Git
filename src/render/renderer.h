@@ -53,7 +53,8 @@ private:
     void resetImage();
 
     glm::vec4 getTFValue(float val) const;
-    float getTF2DOpacity(float val, float gradientMagnitude) const;
+    int determine2DTF(float val, float gradientMagnitude) const;
+    float getTF2DOpacity(float val, float gradientMagnitude, int tfNum) const;
 
     bool instersectRayVolumeBounds(Ray& ray, const Bounds& volumeBounds) const;
     void fillColor(int x, int y, const glm::vec4& color);
